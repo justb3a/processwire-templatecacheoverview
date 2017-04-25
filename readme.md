@@ -9,4 +9,4 @@ E.g. cache status, cache time.
 Furthermore it adds the functionality to clear the entire template cache or just the template cache for a given template.
 Note that this may cause a temporary delay for one or more requests while pages are re-cached.
 
-!["Screenshot of the module's interface"](https://raw.githubusercontent.com/justb3a/TemplateCacheOverview/master/screen.png)
+![Screenshot of the module's interface](https://raw.githubusercontent.com/justb3a/processwire-templatecacheoverview/master/screen.png)
