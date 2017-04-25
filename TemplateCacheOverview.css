@@ -1,0 +1,11 @@
+.hidden {
+  display: none;
+}
+
+.fa-check {
+  color: green;
+}
+
+.fa-remove {
+  opacity: .6;
+}

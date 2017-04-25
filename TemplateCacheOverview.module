@@ -1,0 +1,222 @@
+<?php namespace ProcessWire;
+
+/**
+*
+* TemplateCacheOverview
+*
+* See README.md for usage instructions.
+*
+* @author Tabea David <td@kf-interactive.com>
+* @version 0.0.1
+* @copyright Copyright (c) 2017
+* @see http://www.processwire.com
+*/
+
+/**
+* Class TemplateCacheOverview
+*/
+class TemplateCacheOverview extends Process {
+
+  /**
+   * Return information about this module
+   *
+   */
+  public static function getModuleInfo() {
+    return array(
+      'title' => 'Template Cache Overview',
+      'summary' => 'Overview over the template cache management of all templates of a site.',
+      'version' => 001,
+      'author' => 'Tabea David',
+      'href' => 'https://github.com/justonestep/processwire-templatecacheoverview',
+    );
+  }
+
+  const PAGENAME = 'templatecacheoverview';
+
+  /**
+   * Initialize the module
+   *
+   */
+  public function init() {
+    parent::init();
+  }
+
+  /**
+   * Execute Process Template Cache Overview
+   */
+  public function ___execute() {
+    return $this->getIntro() . $this->getTable() . $this->getHints() . $this->getClearcacheBtn();
+  }
+
+  /**
+    * Get data table
+    *
+    * @return string
+   */
+  private function getTable() {
+    $isSuperuser = $this->wire('user')->isSuperuser();
+    $tplAdminUrl = $this->pages->get('name=template,template=admin')->url;
+
+    $table = $this->wire('modules')->get('MarkupAdminDataTable');
+    $table->setSortable(true);
+    $table->setEncodeEntities(false);
+    $table->headerRow($this->getHeaderRow());
+
+    foreach ($this->templates as $tpl) {
+      // skip system templates
+      if ($tpl->flags & Template::flagSystem) continue;
+
+      // caching disabled
+      $cacheEnabled = 'remove';
+      $useFor = '';
+      $btn = '';
+
+      // overrides if caching enabled
+      if ($tpl->cacheTime) {
+        $cacheEnabled = 'check';
+        $useFor = $tpl->useCacheForUsers ? $this->_('everybody') : $this->_('guests');
+        $btn = $this->getClearcacheBtn($tpl->name, false);
+      }
+
+      $icon = "<span class='hidden'>$cacheEnabled</span> <i class='fa fa-fw fa-$cacheEnabled'></i>";
+      $editLink = "{$tplAdminUrl}edit?id={$tpl->id}#tab_cache";
+      $name = "<a href='{$editLink}' title='{$this->_('Edit template')} {$tpl->name}'>{$tpl->name}</a>";
+
+      $table->row(array($name, $icon, $tpl->cacheTime, $useFor, $btn));
+    }
+
+    return $table->render();
+  }
+
+  /**
+   * Get Table Header
+   *
+   * @return array
+   */
+  private function getHeaderRow() {
+    return array(
+      $this->_('Name'),
+      $this->_('Cache Status'),
+      $this->_('Cache Time') . '&sup1;',
+      $this->_('Cache For') . '&sup2;',
+      $this->_('Clear')
+    );
+  }
+
+  /**
+   * Btn for clearing template cache
+   *
+   * @return string
+   */
+  private function getClearcacheBtn($name = '', $showInfo = true) {
+    $infoText = $this->_('The button below clears generated template cache files, forcing them to be re-cached the next time they are accessed. Note that this may cause a temporary delay for one or more requests while pages are re-cached.');
+    $info = "<p class='detail'><i class='fa fa-fw fa-info-circle'></i> {$infoText}</p>";
+
+    $btnText = $this->_('Clear template cache');
+    $btnIcon = "<i class='fa fa-trash-o'></i>";
+    $btnClass = "ui-button ui-widget ui-corner-all ui-state-default ui-priority-secondary";
+
+    if (!$name) {
+      $btnContent = "<span class='ui-button-text'>{$btnIcon} {$btnText}</span>";
+      $btnLink = "<a href='clearcache' title='{$this->_('Clear template cache')}' class='{$btnClass}'>{$btnContent}</a>";
+      $btn = "<p class='detail'>{$btnLink}</p>";
+    } else {
+      $btn = "<a href='clearcache?name=$name' title='{$this->_('Clear template cache for template')} {$name}'>{$btnIcon}</a>";
+    }
+
+    $out = $showInfo ? $info . $btn : $btn;
+
+    return $out;
+  }
+
+  /**
+   * Get hints for caching
+   *
+   * @return string
+   */
+  private function getHints() {
+    $hints = array(
+      '&sup1; ' . $this->_('For example: 60 = 1 minute, 600 = 10 minutes, 3600 = 1 hour, 86400 = 1 day, 604800 = 1 week, 2419200 = 1 month.'),
+      '&sup2; ' . $this->_('Note that the cache is always disabled for pages where the user has edit access, regardless of what you select.')
+    );
+
+    $hintsRendered = implode("<br />", $hints);
+    return "<p class='notes'>{$hintsRendered}</p>";
+  }
+
+  /**
+   * Get intro text
+   *
+   * @return string
+   */
+  private function getIntro() {
+    $intro = $this->_('Caching can help significantly with page render time on resource-heavy pages. But caching should not be used on templates that need to process constantly changing data, like from forms or sessions. Also note that URL segments are cachable, but GET and POST vars are not.');
+    return "<p class='description'>{$intro}</p>";
+  }
+
+  /**
+   * Executed when ./clearcache/ url for module is accessed
+   */
+  public function ___executeClearcache() {
+    $homePage = $this->pages->get('/');
+    $pageRender = $this->modules->get('PageRender');
+
+    $selector = "has_parent!=2,id!=2|7,status<".Page::statusTrash.",include=all";
+    if ($name = $this->input->get('name')) {
+      $selector .= ",template=$name";
+    }
+
+    $items = $this->pages->findMany($selector);
+    $pageRender->clearCacheFilePages($items, $homePage);
+
+    $this->session->redirect($this->page->url);
+  }
+
+  /**
+   * Does the admin process page exist
+   *
+   * @return boolean
+   */
+  private function doesPageExist() {
+    $moduleID = $this->modules->getModuleID($this);
+    $page = $this->pages->get("template=admin, process=$moduleID, name=" . self::PAGENAME);
+    return $page instanceof NullPage ? false : true;
+  }
+
+  /**
+   * Install routine
+   * Called only when the module is installed
+   *
+   * @access public
+   */
+  public function ___install() {
+    if (!$this->doesPageExist()) {
+      $page = new Page();
+      $page->template = 'admin';
+      $page->name = self::PAGENAME;
+      $page->parent = $this->pages->get($this->config->adminRootPageID)->child('name=setup');
+      $page->process = $this;
+
+      $info = self::getModuleInfo();
+      $page->title = $info['title'];
+      $page->save();
+
+      $this->message("Created Page: {$page->path}");
+    }
+  }
+
+  /**
+   * Uninstall routine
+   * Called only when the module is uninstalled
+   * this should return the site to the same state it was in before the module was installed
+   *
+   * @access public
+   */
+  public function ___uninstall() {
+    if ($this->doesPageExist()) {
+      $this->message("Deleting Page: {$page->path}");
+      $page->delete();
+    }
+  }
+
+}
