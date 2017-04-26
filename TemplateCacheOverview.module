@@ -7,7 +7,7 @@
 * See README.md for usage instructions.
 *
 * @author Tabea David <td@kf-interactive.com>
-* @version 0.0.1
+* @version 0.0.2
 * @copyright Copyright (c) 2017
 * @see http://www.processwire.com
 */
@@ -15,7 +15,7 @@
 /**
 * Class TemplateCacheOverview
 */
-class TemplateCacheOverview extends Process {
+class TemplateCacheOverview extends Process implements Module {
 
   /**
    * Return information about this module
@@ -25,8 +25,9 @@ class TemplateCacheOverview extends Process {
     return array(
       'title' => 'Template Cache Overview',
       'summary' => 'Overview over the template cache management of all templates of a site.',
-      'version' => 001,
+      'version' => 002,
       'author' => 'Tabea David',
+      'icon' => 'table',
       'href' => 'https://github.com/justonestep/processwire-templatecacheoverview',
     );
   }
@@ -45,7 +46,14 @@ class TemplateCacheOverview extends Process {
    * Execute Process Template Cache Overview
    */
   public function ___execute() {
-    return $this->getIntro() . $this->getTable() . $this->getHints() . $this->getClearcacheBtn();
+    $out =
+      $this->getIntro() .
+      $this->getEditConfigLink() .
+      $this->getTable() .
+      $this->getHints() .
+      $this->getClearcacheBtn();
+
+    return $out;
   }
 
   /**
@@ -72,20 +80,67 @@ class TemplateCacheOverview extends Process {
       $btn = '';
 
       // overrides if caching enabled
-      if ($tpl->cacheTime) {
+      $enbld = $tpl->cacheTime;
+      if ($enbld) {
         $cacheEnabled = 'check';
-        $useFor = $tpl->useCacheForUsers ? $this->_('everybody') : $this->_('guests');
+        $useFor = $tpl->useCacheForUsers ? $this->_('all') : $this->_('guests');
         $btn = $this->getClearcacheBtn($tpl->name, false);
       }
 
-      $icon = "<span class='hidden'>$cacheEnabled</span> <i class='fa fa-fw fa-$cacheEnabled'></i>";
       $editLink = "{$tplAdminUrl}edit?id={$tpl->id}#tab_cache";
       $name = "<a href='{$editLink}' title='{$this->_('Edit template')} {$tpl->name}'>{$tpl->name}</a>";
+      $row = array($name);
 
-      $table->row(array($name, $icon, $tpl->cacheTime, $useFor, $btn));
+      foreach ($this->columns as $col) {
+        switch ($col) {
+          case 'cacheStatus':
+            $content = "<span class='hidden'>$cacheEnabled</span> <i class='fa fa-fw fa-$cacheEnabled'></i>";
+            break;
+          case 'cacheTime':
+            $content = $tpl->cacheTime;
+            break;
+          case 'useCacheForUsers':
+            $content = $enbld ? $useFor : '';
+            break;
+          case 'noCacheGetVars':
+            $content = $enbld ? $tpl->noCacheGetVars : '';
+            break;
+          case 'noCachePostVars':
+            $content = $enbld ? $tpl->noCachePostVars : '';
+            break;
+          case 'cacheExpire':
+            $content = $enbld ? $this->getCacheExpire($tpl->cacheExpire) : '';
+            break;
+          default:
+            $content = '';
+        }
+
+        $row[] = $content;
+      }
+
+      $row[] = $btn;
+      $table->row($row);
     }
 
     return $table->render();
+  }
+
+  /**
+   * Get cache expire
+   *
+   * @return string
+   */
+  private function getCacheExpire($index) {
+    $possibilities = array(
+      Template::cacheExpirePage => $this->_('saved page only'),
+      Template::cacheExpireSite => $this->_('entire site'),
+      Template::cacheExpireParents =>$this->_('saved page and parents'),
+      Template::cacheExpireSpecific => $this->_('saved page and specified pages'),
+      Template::cacheExpireSelector => $this->_('saved page and pages matching selector'),
+      Template::cacheExpireNone => $this->_('Do nothing')
+    );
+
+    return $possibilities[$index];
   }
 
   /**
@@ -94,13 +149,29 @@ class TemplateCacheOverview extends Process {
    * @return array
    */
   private function getHeaderRow() {
-    return array(
-      $this->_('Name'),
-      $this->_('Cache Status'),
-      $this->_('Cache Time') . '&sup1;',
-      $this->_('Cache For') . '&sup2;',
-      $this->_('Clear')
-    );
+    $conf = new TemplateCacheOverviewConfig;
+    $options = $conf->getOptions();
+
+    $cols = array($this->_('Name'));
+    foreach ($this->columns as $col) $cols[] = $options[$col];
+    $cols[] = $this->_('Clear');
+
+    return $cols;
+  }
+
+  /**
+   * Edit module configuration
+   *
+   * @return string
+   */
+  private function getEditConfigLink() {
+    $moduleAdminUrl = $this->pages->get('name=module,template=admin')->url;
+    $url = "{$moduleAdminUrl}edit?name={$this->className}";
+    $linkTitle = "$this->className {$this->_('module configuration screen')}";
+    $link = "<a href='$url' title='{$this->_('Edit module configuration')}'>{$linkTitle}</a>";
+    $text = $this->_('Manage what columns to show in the results from the') . " {$link}.";
+
+    return "<p class='detail'><i class='fa fa-fw fa-info-circle'></i> {$text}</p>";
   }
 
   /**
@@ -173,13 +244,22 @@ class TemplateCacheOverview extends Process {
   }
 
   /**
+   * Admin process page
+   *
+   * @return Page
+   */
+  private function getAdminPage() {
+    $moduleID = $this->modules->getModuleID($this);
+    return $this->pages->get("template=admin, process=$moduleID, name=" . self::PAGENAME);
+  }
+
+  /**
    * Does the admin process page exist
    *
    * @return boolean
    */
   private function doesPageExist() {
-    $moduleID = $this->modules->getModuleID($this);
-    $page = $this->pages->get("template=admin, process=$moduleID, name=" . self::PAGENAME);
+    $page = $this->getAdminPage();
     return $page instanceof NullPage ? false : true;
   }
 
@@ -196,9 +276,7 @@ class TemplateCacheOverview extends Process {
       $page->name = self::PAGENAME;
       $page->parent = $this->pages->get($this->config->adminRootPageID)->child('name=setup');
       $page->process = $this;
-
-      $info = self::getModuleInfo();
-      $page->title = $info['title'];
+      $page->title = $this->_('Template Cache');
       $page->save();
 
       $this->message("Created Page: {$page->path}");
@@ -214,6 +292,7 @@ class TemplateCacheOverview extends Process {
    */
   public function ___uninstall() {
     if ($this->doesPageExist()) {
+      $page = $this->getAdminPage();
       $this->message("Deleting Page: {$page->path}");
       $page->delete();
     }
