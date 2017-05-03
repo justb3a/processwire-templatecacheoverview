@@ -6,8 +6,8 @@
 *
 * See README.md for usage instructions.
 *
-* @author Tabea David <td@kf-interactive.com>
-* @version 0.0.2
+* @author Tabea David <info@justonestep.de>
+* @version 0.0.3
 * @copyright Copyright (c) 2017
 * @see http://www.processwire.com
 */
@@ -25,7 +25,7 @@ class TemplateCacheOverview extends Process implements Module {
     return array(
       'title' => 'Template Cache Overview',
       'summary' => 'Overview over the template cache management of all templates of a site.',
-      'version' => 002,
+      'version' => 003,
       'author' => 'Tabea David',
       'icon' => 'table',
       'href' => 'https://github.com/justonestep/processwire-templatecacheoverview',
@@ -62,7 +62,6 @@ class TemplateCacheOverview extends Process implements Module {
     * @return string
    */
   private function getTable() {
-    $isSuperuser = $this->wire('user')->isSuperuser();
     $tplAdminUrl = $this->pages->get('name=template,template=admin')->url;
 
     $table = $this->wire('modules')->get('MarkupAdminDataTable');
@@ -70,7 +69,7 @@ class TemplateCacheOverview extends Process implements Module {
     $table->setEncodeEntities(false);
     $table->headerRow($this->getHeaderRow());
 
-    foreach ($this->templates as $tpl) {
+    foreach ($this->templates->find('sort=-cacheTime') as $tpl) {
       // skip system templates
       if ($tpl->flags & Template::flagSystem) continue;
 
@@ -98,6 +97,7 @@ class TemplateCacheOverview extends Process implements Module {
             break;
           case 'cacheTime':
             $content = $tpl->cacheTime;
+            if ($content > 0) $content .= " ({$this->seconds2human($tpl->cacheTime)})";
             break;
           case 'useCacheForUsers':
             $content = $enbld ? $useFor : '';
@@ -123,6 +123,70 @@ class TemplateCacheOverview extends Process implements Module {
     }
 
     return $table->render();
+  }
+
+  /**
+   * Human readable time
+   *
+   * @param int $inputSeconds
+   * @return string
+   */
+  private function seconds2human($inputSeconds) {
+    $secondsInAMinute = 60;
+    $secondsInAnHour = 60 * $secondsInAMinute;
+    $secondsInADay = 24 * $secondsInAnHour;
+
+    // extract days
+    $days = floor($inputSeconds / $secondsInADay);
+
+    // extract hours
+    $hourSeconds = $inputSeconds % $secondsInADay;
+    $hours = floor($hourSeconds / $secondsInAnHour);
+
+    // extract minutes
+    $minuteSeconds = $hourSeconds % $secondsInAnHour;
+    $minutes = floor($minuteSeconds / $secondsInAMinute);
+
+    // extract the remaining seconds
+    $remainingSeconds = $minuteSeconds % $secondsInAMinute;
+    $seconds = ceil($remainingSeconds);
+
+    $units = array(
+      'day' => (int)$days,
+      'hour' => (int)$hours,
+      'minute' => (int)$minutes,
+      'second' => (int)$seconds
+    );
+
+    $out = array();
+    foreach ($units as $unit => $amount) {
+      if (!$amount) continue;
+      $u = $amount === 1 ? $unit : "{$unit}s";
+      $out[] = "{$amount} {$this->getUnit($u)}";
+    }
+
+    return implode(' ', $out);
+  }
+
+  /**
+   * Get Unit
+   *
+   * @param string $key
+   * @return string
+   */
+  private function getUnit($key) {
+    $units = array(
+      'day' => $this->_('day'),
+      'hour' => $this->_('hour'),
+      'minute' => $this->_('minute'),
+      'second' => $this->_('second'),
+      'days' => $this->_('days'),
+      'hours' => $this->_('hours'),
+      'minutes' => $this->_('minutes'),
+      'seconds' => $this->_('seconds')
+    );
+
+    return array_key_exists($key, $units) ? $units[$key] : '';
   }
 
   /**
